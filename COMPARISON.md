@@ -1,8 +1,6 @@
 # Comparação: Databricks vs. Snowflake
 
-**Responsável:** Guilherme Csorgo  
-**Deadline:** 24/07/2025  
-**Base:** pipelines descritos em [ARCHITECTURE.md](ARCHITECTURE.md), implementados em [databricks/](databricks/) e [snowflake/](snowflake/), sobre a mesma fonte (`openfootball/worldcup.json`) e a mesma regra de negócio (`FACT_REACTION_EVENTS`/`DIM_COMPETITION_SUMMARY`, agrupado por `competition_name`, `04_gold_insights.sql` no Snowflake e os notebooks/dbt no Databricks).
+**Base:** pipelines descritos em [ARCHITECTURE.md](ARCHITECTURE.md), implementados em [databricks/](databricks/) e [snowflake/](snowflake/), sobre a mesma fonte (`openfootball/worldcup.json`) e a mesma regra de negócio (`FACT_REACTION_EVENTS`/`DIM_COMPETITION_SUMMARY`, agrupado por `competition_name`, implementada em `04_gold_insights.sql` no Snowflake e nos notebooks/dbt no Databricks).
 
 ## 1. Facilidade de uso
 
@@ -14,10 +12,11 @@
 | Orquestração das camadas | Execução sequencial dos 4 notebooks | Procedures encadeadas + Tasks (`06_pipeline_procedures_and_schedule.sql`) |
 | Time to market** | ~2 semanas (business hours) | ~2 semanas (business hours) |
 
-> ** Segundo a análise do grupo, os dois pipelines levaram aproximadamente o mesmo tempo (~2 semanas) para ficar prontos. O tempo de desenvolvimento não leva em consideração a expertise de cada usuário nas plataformas, então essa paridade não deve ser lida como "as duas plataformas são igualmente fáceis". É só o dado bruto de tempo gasto.
+> ** Os dois pipelines levaram aproximadamente o mesmo tempo de desenvolvimento, cerca de duas semanas, para ficar prontos. Esse tempo não leva em conta a expertise prévia de cada integrante em cada plataforma, portanto essa paridade não deve ser lida como evidência de que as duas plataformas são igualmente fáceis de aprender. É apenas o tempo bruto de desenvolvimento.
 
 ### Evidências
-As evidencias completas estão disponiveis na pasta dos respectivos pipelines, dentro de `evidencias`. 
+
+As evidencias completas estão disponiveis na pasta dos respectivos pipelines, dentro de `evidencias`.
 
 #### Databricks
 ![Implementação databricks](databricks/evidencias/img/44b87736-0152-4ab5-8b69-9b7cb9403aff.png)
@@ -37,7 +36,7 @@ As evidencias completas estão disponiveis na pasta dos respectivos pipelines, d
 | Camada Gold | PySpark + SQL, self-join temporal para `reacted_flag` | SQL puro, mesma lógica de self-join (dbt models idênticos aos do Databricks) |
 | Evolução de schema | Unity Catalog | Schema Evolution nativo do Snowflake |
 
-**Observação:** a lógica de negócio da camada Gold é **literalmente igual** nos dois projetos dbt (`databricks/dbt_openfootball/` e `snowflake/dbt_openfootball/`), então a diferença aqui é puramente de engine/sintaxe, não de resultado.
+OBS: A lógica de negócio da camada Gold é idêntica nos dois projetos dbt (`databricks/dbt_openfootball/` e `snowflake/dbt_openfootball/`). A diferença entre as duas implementações está apenas na sintaxe do motor de banco, não no resultado final.
 
 **Volume real processado (Databricks, evidência em `databricks/evidencias/`):**
 
@@ -49,12 +48,13 @@ As evidencias completas estão disponiveis na pasta dos respectivos pipelines, d
 | `silver.goal_events_quarantine` (rejeitados) | 0 |
 | `gold.fact_reaction_events` | 1.195 |
 
-Confirma a estimativa de ~1.000 partidas da seção 3 (era 1.067 na prática) e mostra **0 registros em quarentena** — ou seja, para essa fonte (`worldcup.json`), as regras de Data Quality não rejeitaram nenhum evento de gol.
+O volume total processado soma 1.067 partidas e 1.195 eventos de gol, sem nenhum registro em quarentena. Para a fonte `worldcup.json`, as regras de qualidade de dados não rejeitaram nenhum evento de gol.
 
-**PENDENTE (Membro 3):** mesma contagem de linhas por camada no Snowflake, para confirmar que os dois pipelines processam exatamente o mesmo volume (esperado, já que a fonte e o filtro são idênticos).
+**Pendente:** contagem de linhas por camada no Snowflake.
 
 ### Evidencias
-As evidencias completas estão disponiveis na pasta dos respectivos pipelines, dentro de `evidencias`. 
+
+As evidencias completas estão disponiveis na pasta dos respectivos pipelines, dentro de `evidencias`.
 
 #### Databricks
 ![Implementação databricks](databricks/evidencias/img/7b5df094-dca6-4469-b387-635dff51e7e5.png)
@@ -68,13 +68,14 @@ As evidencias completas estão disponiveis na pasta dos respectivos pipelines, d
 
 | Critério | Databricks | Snowflake |
 |---|---|---|
-| Modelo de computação | **Serverless Compute**, elástico, provisionado sob demanda só durante a execução do notebook | Warehouse `WH_DI_P_PIPELINE`, tamanho `XSMALL`, auto-suspend em 60s |
-| Adequação ao volume do projeto | "Overkill" para o volume atual:  todas as Copas do Mundo (1930–2026) somam **1.067 partidas reais** , não dezenas de milhares. Spark compensa em volumes bem maiores que isso | Mais que suficiente para o volume atual; warehouse `XSMALL` já sobra espaço de processamento |
-| Tempo de execução Medallion | Bronze 1m 9s + Silver 38s + Gold 32s = **2m 22s** no total | **PENDENTE (Membro 3):** mesma medição no histórico de queries/tasks do Snowflake |
-| Custo de "cold start" | Nenhum cold start manual a gerenciar: Serverless Compute já inclui o provisionamento elástico dentro do tempo medido acima (não existe cluster para ligar antes de rodar) | Warehouse `XSMALL` sobe em segundos, cobrado a partir do primeiro segundo de uso |
+| Modelo de computação | Serverless Compute, elástico, provisionado sob demanda só durante a execução do notebook | Warehouse `WH_DI_P_PIPELINE`, tamanho `XSMALL`, auto-suspend em 60s |
+| Adequação ao volume do projeto | Overkill para o volume atual. Todas as Copas do Mundo entre 1930 e 2026 somam 1.067 partidas, não dezenas de milhares. Spark compensa esse overhead em volumes bem maiores | Mais que suficiente para o volume atual. O warehouse `XSMALL` já sobra em capacidade de processamento |
+| Tempo de execução Medallion | Bronze 1m 9s, Silver 38s e Gold 32s, totalizando 2m 22s | Pendente |
+| Custo de "cold start" | Não há cold start manual. O Serverless Compute já inclui o provisionamento elástico dentro do tempo medido acima, sem cluster para ligar antes da execução | O warehouse `XSMALL` sobe em segundos e é cobrado a partir do primeiro segundo de uso |
 
 ### Evidencias
-As evidencias completas estão disponiveis na pasta dos respectivos pipelines, dentro de `evidencias`. 
+
+As evidencias completas estão disponiveis na pasta dos respectivos pipelines, dentro de `evidencias`.
 
 #### Databricks
 ![Implementação databricks](databricks/evidencias/img/c32533c1-d495-4056-8192-20642d38827f.png)
@@ -82,16 +83,16 @@ As evidencias completas estão disponiveis na pasta dos respectivos pipelines, d
 #### Snowflake
 ![Implementação snowflake](snowflake/evidencias/img/)
 
-### Projeção de escala (minutos → horas por semana)
+### Projeção de escala (de minutos para horas por semana)
 
-O volume atual do projeto é pequeno. O pipeline do Databricks roda em **2m 22s por semana**; O Snowflake, ainda sem medição, estimado na mesma ordem de grandeza. Para embasar a discussão de "o que acontece se o projeto crescer", projetamos um cenário hipotético de algumas horas de processamento por semana (ex.: ingestão diária durante mês de Copa, enriquecimento com mais ligas/temporadas, ou granularidade maior de eventos):
+O volume atual do projeto é pequeno. O pipeline do Databricks roda em 2 minutos e 22 segundos por semana. O tempo do Snowflake ainda não foi medido, mas deve ficar na mesma ordem de grandeza. Para discutir o que aconteceria se o projeto crescesse, projetamos um cenário hipotético de algumas horas de processamento por semana, por exemplo se o pipeline passasse a rodar diariamente durante o mês de Copa ou passasse a incorporar mais ligas e temporadas.
 
 | Cenário | Databricks | Snowflake |
 |---|---|---|
-| Atual (~2m22s por semana) | Serverless Compute provisiona e processa nesses 2m22s, sem cluster para gerenciar; nenhum "pedágio" de boot separado do tempo medido | Warehouse `XSMALL` sobe em segundos, processa, auto-suspende em 60s. Praticamente todo o tempo cobrado é processamento de fato |
-| Projetado (algumas horas/semana) | Serverless escala elasticamente com a carga. O tempo tende a crescer de forma mais linear com o volume, sem degrau de redimensionamento manual | Rodando o mesmo warehouse `XSMALL` por horas, o tempo escala de forma linear; se o volume exigir mais velocidade, o warehouse precisa ser redimensionado manualmente (ver custo mais pra baixo) |
+| Atual (~2m22s por semana) | O Serverless Compute provisiona e processa dentro dos 2m22s medidos, sem cluster para gerenciar e sem tempo de boot separado do processamento | O warehouse `XSMALL` sobe em segundos, processa e entra em auto-suspend em 60s. Praticamente todo o tempo cobrado é processamento de fato |
+| Projetado (algumas horas/semana) | O Serverless escala elasticamente com a carga. O tempo tende a crescer de forma linear com o volume, sem degrau de redimensionamento manual | Rodando o mesmo warehouse `XSMALL` por horas, o tempo escala de forma linear. Se o volume exigir mais velocidade, o warehouse precisa ser redimensionado manualmente |
 
-**Leitura:** Databricks Serverless escala automaticamente sem intervenção, enquanto o Snowflake exige redimensionar o warehouse manualmente (`XSMALL`→`SMALL`→...) se a velocidade não for suficiente. Isso é operacionalmente mais simples no Databricks, mas o Snowflake dá controle mais previsível de custo por não escalar sozinho.
+O Databricks Serverless escala automaticamente, sem intervenção manual. O Snowflake exige redimensionar o warehouse manualmente (de `XSMALL` para `SMALL` e assim por diante) quando a velocidade não é suficiente. Isso torna a operação mais simples no Databricks, mas o Snowflake oferece um controle de custo mais previsível justamente por não escalar sozinho.
 
 ---
 
@@ -103,36 +104,37 @@ O volume atual do projeto é pequeno. O pipeline do Databricks roda em **2m 22s 
 | Linhagem (lineage) | Unity Catalog rastreia automaticamente | Rastreada manualmente via `SOURCE_FILE`, `_RUN_ID`, `QC.PIPELINE_RUNS` |
 | Controle de acesso | Unity Catalog RBAC | RBAC nativo do Snowflake (roles/grants). Não implementado explicitamente nos scripts do trabalho |
 | Qualidade de dados | Quarentena em tabelas Delta separadas | Quarentena em tabelas + `QC.CHECK_RESULTS`/`QC.PIPELINE_RUNS` + testes dbt |
-| Dados sensíveis | N/A (base pública, sem PII) | N/A (base pública, sem PII) |
+| Dados sensíveis | N/A (base pública, sem PII**) | N/A (base pública, sem PII**) |
 
+> ** PII: Personally Identifiable Information  
 ### Frequência de atualização
 
-**Semanal (toda segunda, 06h)** na "temporada" (ago–mai); **mensal (dia 1, 06h)**, só verificação, no recesso (jun–jul); correções sob demanda. Cadência implementada em `06_pipeline_procedures_and_schedule.sql` (`PIPE.TASK_WORLDCUP_WEEKLY`) e documentada em `ARCHITECTURE.md`.
+Semanal, toda segunda-feira às 06h, na temporada corrente (agosto a maio). Mensal, no dia 1 às 06h, apenas verificação, no recesso (junho a julho). Correções sob demanda. Cadência implementada em `06_pipeline_procedures_and_schedule.sql` (`PIPE.TASK_WORLDCUP_WEEKLY`) e documentada em `ARCHITECTURE.md`.
 
 ### Retenção (hot/cold por camada)
 
-Política geral: **manter tudo**, já que o custo de storage é baixo (base cabe em dezenas de MB) e não há obrigação legal de expurgo (sem dado pessoal). Diferença é só hot vs. cold storage por idade:
+Política geral: manter tudo, já que o custo de storage é baixo (a base cabe em dezenas de MB) e não há obrigação legal de expurgo, pois não há dado pessoal. A diferença é apenas entre armazenamento hot e cold conforme a idade do dado:
 
 | Camada | O que guardar | Retenção | Depois disso |
 |---|---|---|---|
 | Bronze | Arquivos brutos (JSON/TXT) | Indefinido | Cold storage após 24 meses sem acesso |
-| Silver | Dado limpo consolidado | Indefinido | — |
+| Silver | Dado limpo consolidado | Indefinido | N/A |
 | Silver | Versões intermediárias de migração de schema | 90 dias | Descarte |
-| Gold | Versão atual das métricas | Indefinido | — |
+| Gold | Versão atual das métricas | Indefinido | N/A |
 | Gold | Versões históricas (modelos anteriores) | 12 meses | Cold storage |
 
-Isso é relevante para a seção de custo: como a política é "manter tudo" e o volume é pequeno, o custo de storage tende a zero nas duas plataformas. A variável de custo real do projeto é compute (DBU/crédito), não armazenamento.
+Essa política é relevante para a seção de custo: como a política é manter tudo e o volume é pequeno, o custo de storage tende a zero nas duas plataformas. A variável de custo real do projeto é compute (DBU ou crédito), não armazenamento.
 
-### Dados sensíveis (Ausencia de PII)
+### Dados sensíveis (ausência de PII)
 
-Mesmo sem dado sensível na base escolhida, definimos uma abordagem caso houvesse: tokenização/mascaramento antes da persistência (mapeamento em cofre externo tipo AWS Secrets Manager/Vault), anonimização irreversível na Silver, e RBAC por perfil (engenheiro de dados = acesso total; analista/cientista de dados = leitura restrita/anonimizada; consumidor de dashboard = só Gold). As duas plataformas têm suporte nativo equivalente:
+Mesmo sem dado sensível na base escolhida, definimos uma abordagem para o caso de haver: tokenização e mascaramento antes da persistência, com o mapeamento guardado em um cofre externo do tipo AWS Secrets Manager ou Vault, anonimização irreversível na Silver, e controle de acesso por perfil (engenheiro de dados com acesso total, analista e cientista de dados com leitura restrita ou anonimizada, consumidor de dashboard restrito à Gold). As duas plataformas têm suporte nativo equivalente:
 
 | Mecanismo | Databricks | Snowflake |
 |---|---|---|
 | Mascaramento dinâmico | Unity Catalog Column Masks | Dynamic Data Masking Policies |
 | Auditoria de acesso | Unity Catalog (log nativo) | Access History |
 
-Isso confirma o que já estava na tabela acima (a não implementação do RBAC). Isso é uma decisão de design documentada, não há implementação disso em código rodando.
+Essa abordagem de RBAC é uma decisão de design documentada, sem implementação em código no repositório atual, o que é consistente com a tabela de governança acima.
 
 ---
 
@@ -140,72 +142,66 @@ Isso confirma o que já estava na tabela acima (a não implementação do RBAC).
 
 ### Modelo de cobrança
 
-**Databricks: DBU (Databricks Unit):**
-- Cobrança por DBU consumida × preço por DBU (varia por tipo de compute e tier).
-- O pipeline deste projeto roda em **Serverless Compute**, não em cluster clássico. No compute clássico, o DBU não inclui a VM (paga-se DBU + infraestrutura cloud separadamente); no Serverless, a Databricks roda o compute na própria conta cloud dela e cobra tudo embutido no preço do DBU. Não existe fatura separada de VM/EC2 para o time de sustentação gerenciar.
-- Referência de mercado (2026, valores públicos de list price. Preços variam bastante entre fontes, trataremos apenas como referencia):  
-  * Jobs Compute clássico ≈ US$ 0,15–0,30/DBU;  
-  * SQL/Data Warehousing ≈ US$ 0,22/DBU;  
-  * Interactive/All-Purpose (notebook manual) ≈ US$ 0,40/DBU;  
-  * Serverless (Jobs/SQL) tende a cobrar um pouco mais por DBU que o Jobs Compute clássico, mas em troca já embute o custo de infraestrutura. Não há uma tabela pública única e confiável para o rate exato de Serverless Jobs, então tratamos isso como faixa, não número fechado.
-- Tier Standard está sendo descontinuado em 2026 (planos migrando para Premium). Premium custa ~30-37% a mais que os valores de Standard citados acima.
+**Databricks: DBU (Databricks Unit)**
 
-**Snowflake: crédito de warehouse + storage:**
-- Cobrança por **crédito** consumido pelo warehouse (1 crédito/hora para `XSMALL`), dobra a cada tamanho:
-  * Small: 2 
-  * Medium: 4 
-  * Large: 8 
-  * Armazenamento (~US$ 23/TB/mês, cobrado separado do compute).
-- Preço do crédito por edição (2026, list price): Standard ≈ US$ 2/crédito, Enterprise ≈ US$ 3, Business Critical ≈ US$ 4.
-- Warehouse do projeto: `XSMALL`, `AUTO_SUSPEND = 60` (economiza créditos entre execuções, já que o pipeline roda 1x/semana).
+- Cobrança por DBU consumida, multiplicada pelo preço por DBU, que varia por tipo de compute e por tier.
+- O pipeline deste projeto roda em Serverless Compute, não em cluster clássico. No compute clássico, o DBU não inclui a VM, e a infraestrutura cloud é cobrada separadamente. No Serverless, o compute roda na própria conta cloud da Databricks e o custo de infraestrutura já vem embutido no preço do DBU, sem fatura separada de VM para gerenciar.
+- Referência de mercado (2026, valores públicos de list price, tratados como ordem de grandeza, não como número fechado):
+  * Jobs Compute clássico: aproximadamente US$ 0,15 a US$ 0,30 por DBU.
+  * SQL/Data Warehousing: aproximadamente US$ 0,22 por DBU.
+  * Interactive/All-Purpose (notebook manual): aproximadamente US$ 0,40 por DBU.
+  * Serverless (Jobs/SQL) tende a cobrar um pouco mais por DBU que o Jobs Compute clássico, mas em troca já embute o custo de infraestrutura. Não há uma tabela pública única para o rate exato de Serverless Jobs.
+- O tier Standard está sendo descontinuado em 2026, com migração para o tier Premium, que custa de 30% a 37% a mais que os valores de Standard citados acima.
 
-> Números de mercado levantados via pesquisa pública (usamos free tier das plataformas). Ver PENDENTE abaixo para substituir por valores medidos.
+**Snowflake: crédito de warehouse + storage**
+
+- Cobrança por crédito consumido pelo warehouse, 1 crédito por hora para `XSMALL`, dobrando a cada tamanho: Small 2 créditos, Medium 4 créditos, Large 8 créditos.
+- Armazenamento cobrado separadamente do compute, cerca de US$ 23 por TB por mês.
+- Preço do crédito por edição (2026, list price): Standard aproximadamente US$ 2 por crédito, Enterprise aproximadamente US$ 3, Business Critical aproximadamente US$ 4.
+- Warehouse do projeto: `XSMALL`, com `AUTO_SUSPEND = 60`, o que economiza créditos entre execuções, já que o pipeline roda uma vez por semana.
+
+Os valores acima vêm de pesquisa pública de mercado, não de fatura real. Pendente: substituir por valores medidos nas duas plataformas.
 
 ### Estimativa para o cenário do grupo
 
-O volume atual do projeto, considerando o tempo real do Databricks (**2m 22s/semana**, medido) e Snowflake ainda estimado, e uma projeção de crescimento (algumas horas de processamento por semana, como por exemplo, se o pipeline passasse a rodar diariamente em mês de Copa com mais ligas/temporadas). Warehouse/compute mantidos no menor nível (`XSMALL` / Serverless mínimo) nos dois cenários, sem redimensionamento.
+A estimativa a seguir considera o volume atual do projeto, com o tempo real medido no Databricks (2 minutos e 22 segundos por semana) e o tempo do Snowflake ainda pendente, além de uma projeção de crescimento para algumas horas de processamento por semana, por exemplo se o pipeline passasse a rodar diariamente durante o mês de Copa e incorporasse mais ligas e temporadas. Em ambos os cenários, o warehouse e o compute são mantidos no menor nível disponível, `XSMALL` no Snowflake e Serverless mínimo no Databricks, sem redimensionamento.
 
 | Item | Databricks (Serverless) | Snowflake (`XSMALL`) |
 |---|---|---|
 | Frequência de execução | Semanal (± diária em mês de Copa) | Semanal (± diária em mês de Copa) |
-| Tempo por execução **atual** | **Real: 2m 22s** (job de 21/07/2026) | **PENDENTE (Membro 3):** estimado na mesma ordem de grandeza (poucos minutos) |
-| Custo por execução **atual** | (~US$ 0,02–0,10 aplicando as faixas de DBU acima sobre 2m22s). **falta o valor real de DBU consumido**, só temos o tempo | ≈ US$ 0,10–0,30 (fração de 1 crédito sobre poucos minutos) |
-| Custo mensal **atual** (fora de Copa) | < US$ 1/mês (estimado) | ≈ US$ 1–3/mês (estimado) |
-| Tempo por execução **projetado** (algumas horas/semana) | ~3h/semana (hipótese de trabalho) | ~3h/semana (hipótese de trabalho) |
-| Custo por execução **projetado** | ≈ US$ 0,45–1,20/semana (faixa Serverless/Jobs sobre 3h) | ≈ US$ 6–12/semana (3 créditos × US$2–4) |
-| Custo mensal **projetado** (×4,33 semanas) | ≈ US$ 2–5/mês | ≈ US$ 26–52/mês |
+| Tempo por execução, cenário atual | 2 minutos e 22 segundos, medido na execução de 21/07/2026 | Pendente |
+| Custo por execução, cenário atual | Estimado entre US$ 0,02 e US$ 0,10, aplicando as faixas de DBU acima sobre 2m22s. O consumo real de DBU ainda não foi medido | Estimado entre US$ 0,10 e US$ 0,30, fração de 1 crédito sobre poucos minutos de uso |
+| Custo mensal, cenário atual (fora de Copa) | Estimado abaixo de US$ 1 por mês | Estimado entre US$ 1 e US$ 3 por mês |
+| Tempo por execução, cenário projetado | 3 horas por semana (hipótese de trabalho) | 3 horas por semana (hipótese de trabalho) |
+| Custo por execução, cenário projetado | Estimado entre US$ 0,45 e US$ 1,20 por semana, aplicando a faixa Serverless/Jobs sobre 3h | Estimado entre US$ 6 e US$ 12 por semana, equivalente a 3 créditos entre US$ 2 e US$ 4 |
+| Custo mensal, cenário projetado (× 4,33 semanas) | Estimado entre US$ 2 e US$ 5 por mês | Estimado entre US$ 26 e US$ 52 por mês |
 
-**Leitura da projeção:** no volume atual (minutos por semana), o custo absoluto é irrelevante nas duas plataformas: menos de um dólar por mês. Extrapolando para horas/semana, a diferença fica mais visível: como o Databricks deste projeto já roda em Serverless, a faixa de DBU aplicável é a mais barata disponível, então mesmo na projeção de horas/semana, o Databricks tende a sair mais barato que manter um warehouse Snowflake ligado pelo mesmo tempo, porque mesmo a faixa alta de DBU Serverless/Jobs (~US$0,40) ainda é menor que 1 crédito Snowflake (~US$2-4) por hora equivalente de trabalho pequeno.
+No volume atual, medido em minutos por semana, o custo absoluto é irrelevante nas duas plataformas, ficando abaixo de um dólar por mês. Na projeção de horas por semana essa diferença fica mais visível. Como o pipeline Databricks já roda em Serverless, a faixa de DBU aplicável é a mais barata entre as opções consideradas. Mesmo na faixa alta de DBU Serverless, em torno de US$ 0,40, o custo ainda fica abaixo de 1 crédito Snowflake, entre US$ 2 e US$ 4, por hora equivalente de processamento.
 
-> **Ressalva importante:** essa comparação usa preços de mercado (list price) sobre o **tempo real** do Databricks, mas não sobre o **custo real faturado**. Ainda não temos o print de DBU consumido/fatura de nenhuma das duas plataformas. Os valores aqui continuam sendo estimativa, só que agora ancorada num tempo medido de verdade (Databricks) em vez de um chute de "poucos minutos".
+Essa comparação aplica preços de mercado sobre o tempo real medido no Databricks, e não sobre o custo real faturado. Pendente: consumo real de DBU e de crédito nas duas plataformas.
 
-> **Observação:** no Snowflake a variável principal de escalabilidade é o tamanho do warehouse, que escala em degraus (dobrando a cada tier), diferente do Databricks Serverless, que escala de forma mais contínua/automática.
+No Snowflake, a escalabilidade de custo depende do tamanho do warehouse, que dobra a cada tier. No Databricks Serverless, a escalabilidade é automática e contínua.
 
-> **Observação 2:** Consultar `ARCHITECTURE.md` para detalhes da frequência de execução.
+A frequência de execução está detalhada em `ARCHITECTURE.md`.
 
 ---
 
 ## 6. Conclusão
 
-**Ainda não é a versão final**. Falta a evidência real do Snowflake (tempo de execução, volume por camada, custo/DBU ou consumo de crédito). O que segue é o que já dá para afirmar com confiança hoje, e o que continua sendo suposição até essa evidência chegar.
+### TL;DR;
 
-### O que já podemos concluir
+> Conclusão final: SNOWFLAKE
 
-- **Volume do projeto é beem pequeno:** 1.067 partidas, 1.195 eventos de gol, 0 em quarentena, não dezenas de milhares imaginavamos que haveria.
-- **O pipeline roda rápido nas condições atuais:** o Databricks mediu 2m22s para as três camadas (Bronze→Silver→Gold) via Serverless Compute, sem cluster para gerenciar. Não há motivo para achar que o Snowflake (mesmo volume, warehouse `XSMALL`) seria significativamente mais lento — mas isso ainda precisa ser medido, não assumido.
-- **A regra de negócio é idêntica e já produz resultado de verdade nas duas plataformas** (dbt compartilhado, mesmo `FACT_REACTION_EVENTS`/`DIM_COMPETITION_SUMMARY`), o que valida a comparação: não estamos comparando "maçã com laranja".
+### Detalhamento
 
-### O que ainda é estimativa (pendente de evidência do Snowflake)
+O volume de dados do projeto é pequeno: 1.067 partidas e 1.195 eventos de gol, cobrindo todas as edições da Copa do Mundo entre 1930 e 2026, sem nenhum registro rejeitado pelas regras de qualidade. Esse volume não justifica, por si só, a escolha de nenhuma das duas plataformas em termos de capacidade de processamento.
 
-- **Custo real de qualquer uma das duas plataformas.** Temos preço de mercado (list price) e, do lado Databricks, um tempo real medido. mas nenhuma fatura/consumo de DBU ou crédito real de nenhuma das duas. A tabela da seção 5 é a melhor estimativa possível hoje, não um número fechado.
-- **Tempo de execução do Snowflake.** Sem isso, não dá para afirmar qual plataforma é mais rápida na prática — só que, no papel, as duas deveriam ser rápidas para esse volume.
+O pipeline Databricks processa esse volume em 2 minutos e 22 segundos, rodando em Serverless Compute, sem necessidade de gerenciar cluster. A mesma regra de negócio está implementada nas duas plataformas por meio de modelos dbt idênticos, o que garante que o resultado analítico, o percentual de reação por edição de Copa do Mundo, é equivalente entre Databricks e Snowflake.
 
-### Rascunho de recomendação (a confirmar quando a evidência do Snowflake chegar)
+Para o volume atual, as duas plataformas são tecnicamente adequadas e de baixo custo. A diferença mais relevante entre elas não está em performance ou em custo bruto, mas na operação. O Snowflake exige apenas conhecimento de SQL e não tem infraestrutura para gerenciar, o que reduz a barreira de entrada para quem não conhece Spark. O Databricks, rodando em Serverless, também elimina boa parte da complexidade operacional de cluster que tradicionalmente pesaria contra ele.
 
-Com o que temos até agora, a leitura é: para o **volume atual do projeto** (~1.000 partidas, atualização semanal/mensal), as duas plataformas são tecnicamente capazes e baratas — a decisão pende mais para **facilidade operacional** do que para performance ou custo bruto:
+Na projeção de crescimento para algumas horas de processamento por semana, o Databricks Serverless tende a apresentar custo menor que o Snowflake no mesmo cenário, considerando os preços de mercado levantados na seção 5. Essa vantagem de custo depende da disciplina operacional de manter o pipeline como execução automatizada, e não como notebook interativo, que é cobrado a um DBU mais alto.
 
-- **Snowflake** exige só SQL (curva de aprendizado menor para quem não sabe Spark) e não tem infraestrutura para gerenciar (warehouse é só um parâmetro).
-- **Databricks**, rodando em Serverless (não cluster clássico), também remove a complexidade operacional que normalmente pesaria contra ele — o que enfraquece o argumento clássico "Databricks é mais complexo de operar" para este projeto específico.
-- Nenhuma das duas se justifica pelo volume de dados sozinho: ~1.000 partidas é pequeno demais para forçar a mão para qualquer lado nesse critério.
+Diante do exposto, a recomendação do grupo para este caso é o **Snowflake**, pela simplicidade operacional de depender apenas de SQL, pela ausência de infraestrutura para gerenciar e pela previsibilidade do modelo de cobrança por warehouse. O Databricks permanece como alternativa competitiva em custo projetado de crescimento, e se torna preferível caso precisemos futuramente de processamento distribuído em maior escala ou de cargas de machine learning no mesmo ambiente.
 
-**A palavra final deste documento fica condicionada à evidência do Snowflake.** Se o tempo/custo real do Snowflake vier na mesma ordem de grandeza do Databricks (o esperado, dado o volume), a conclusão provavelmente vai pesar mais para critérios qualitativos (facilidade de uso, governança, lock-in) do que para custo/performance — mas isso só pode ser afirmado com confiança depois que os dois lados tiverem evidência real, não só um.
+**Itens pendentes para fechar a análise com números medidos dos dois lados**: tempo de execução real do Snowflake, volume processado por camada no Snowflake, e consumo real de DBU e de crédito nas duas plataformas.

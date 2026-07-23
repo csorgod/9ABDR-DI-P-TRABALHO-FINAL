@@ -2,7 +2,7 @@
 
 **Responsável:** Guilherme Csorgo  
 **Deadline:** 24/07/2025  
-**Base:** pipelines descritos em [ARCHITECTURE.md](ARCHITECTURE.md), implementados em [databricks/](databricks/) e [snowflake/](snowflake/), sobre a mesma fonte (`openfootball/worldcup.json`) e a mesma regra de negócio.
+**Base:** pipelines descritos em [ARCHITECTURE.md](ARCHITECTURE.md), implementados em [databricks/](databricks/) e [snowflake/](snowflake/), sobre a mesma fonte (`openfootball/worldcup.json`) e a mesma regra de negócio (`FACT_REACTION_EVENTS`/`DIM_COMPETITION_SUMMARY`, agrupado por `competition_name`, `04_gold_insights.sql` no Snowflake e os notebooks/dbt no Databricks).
 
 ## 1. Facilidade de uso
 
@@ -42,7 +42,7 @@
 | Critério | Databricks | Snowflake |
 |---|---|---|
 | Modelo de computação | Cluster Spark (paralelismo distribuído) | Warehouse `WH_DI_P_PIPELINE`, tamanho `XSMALL`, auto-suspend em 60s |
-| Adequação ao volume do projeto | "Overkill" para o volume atual (dezenas de milhares de partidas). Spark compensa em volumes muito maiores | Adequado ao volume atual; warehouse pequeno já suficiente |
+| Adequação ao volume do projeto | "Overkill" para o volume atual somando todas as Copas do Mundo (1930–2026), o total fica na casa de **~1.000 partidas**, não dezenas de milhares. Spark compensa em volumes bem maiores que isso | Mais que suficiente para o volume atual; warehouse `XSMALL` já sobra espaço de processamento |
 | Tempo de execução Medalion | Estimado: poucos minutos/semana no volume atual | Estimado: poucos minutos/semana no volume atual |
 | Custo de "cold start" | Cluster leva minutos para subir (se não estiver always-on) | Warehouse XSMALL sobe em segundos |
 
@@ -71,7 +71,34 @@ O volume atual do projeto é pequeno, então o pipeline roda por **poucos minuto
 | Qualidade de dados | Quarentena em tabelas Delta separadas | Quarentena em tabelas + `QC.CHECK_RESULTS`/`QC.PIPELINE_RUNS` + testes dbt |
 | Dados sensíveis | N/A (base pública, sem PII) | N/A (base pública, sem PII) |
 
-**PENDENTE:** confirmar com o Membro 5 se há algo específico de governança já decidido que deva entrar nesta tabela.
+### Frequência de atualização
+
+**Semanal (toda segunda, 06h)** na "temporada" (ago–mai); **mensal (dia 1, 06h)**, só verificação, no recesso (jun–jul); correções sob demanda. Cadência implementada em `06_pipeline_procedures_and_schedule.sql` (`PIPE.TASK_WORLDCUP_WEEKLY`) e documentada em `ARCHITECTURE.md`.
+
+### Retenção (hot/cold por camada)
+
+Política geral: **manter tudo**, já que o custo de storage é baixo (base cabe em dezenas de MB) e não há obrigação legal de expurgo (sem dado pessoal). Diferença é só hot vs. cold storage por idade:
+
+| Camada | O que guardar | Retenção | Depois disso |
+|---|---|---|---|
+| Bronze | Arquivos brutos (JSON/TXT) | Indefinido | Cold storage após 24 meses sem acesso |
+| Silver | Dado limpo consolidado | Indefinido | — |
+| Silver | Versões intermediárias de migração de schema | 90 dias | Descarte |
+| Gold | Versão atual das métricas | Indefinido | — |
+| Gold | Versões históricas (modelos anteriores) | 12 meses | Cold storage |
+
+Isso é relevante para a seção de custo: como a política é "manter tudo" e o volume é pequeno, o custo de storage tende a zero nas duas plataformas. A variável de custo real do projeto é compute (DBU/crédito), não armazenamento.
+
+### Dados sensíveis (Ausencia de PII)
+
+Mesmo sem dado sensível na base escolhida, definimos uma abordagem caso houvesse: tokenização/mascaramento antes da persistência (mapeamento em cofre externo tipo AWS Secrets Manager/Vault), anonimização irreversível na Silver, e RBAC por perfil (engenheiro de dados = acesso total; analista/cientista de dados = leitura restrita/anonimizada; consumidor de dashboard = só Gold). As duas plataformas têm suporte nativo equivalente:
+
+| Mecanismo | Databricks | Snowflake |
+|---|---|---|
+| Mascaramento dinâmico | Unity Catalog Column Masks | Dynamic Data Masking Policies |
+| Auditoria de acesso | Unity Catalog (log nativo) | Access History |
+
+Isso confirma o que já estava na tabela acima (a não implementação do RBAC). Isso é uma decisão de design documentada, não há implementação disso em código rodando.
 
 ---
 
@@ -125,6 +152,6 @@ O **volume atual** do projeto (poucos minutos de processamento por semana) e uma
 **PENDENTE**: Escrever após preencher as seções de performance e custo acima.**
 
 Rascunho (a confirmar/ajustar com os números reais):
-- Para o **volume atual do projeto** (dezenas de milhares de partidas, atualização semanal), Snowflake tende a ter custo/operação mais simples: warehouse pequeno, sem necessidade de gerenciar cluster Spark, SQL puro reduz a barreira de manutenção.
+- Para o **volume atual do projeto** (~1.000 partidas no total, todas as Copas do Mundo 1930–2026, atualização semanal/mensal), Snowflake tende a ter custo/operação mais simples: warehouse pequeno, sem necessidade de gerenciar cluster Spark, SQL puro reduz a barreira de manutenção.
 - Databricks se justificaria melhor se o volume crescesse por ordens de grandeza (ex.: ingestão de eventos em tempo real, múltiplas fontes de dados não estruturados) ou se o time já tivesse forte expertise em Spark/ML no mesmo workspace.
 - A decisão final deve pesar não só custo/performance no volume atual, mas também para onde o grupo imagina esse pipeline crescer.

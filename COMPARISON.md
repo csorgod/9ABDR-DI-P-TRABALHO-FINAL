@@ -22,7 +22,7 @@ As evidencias completas estão disponiveis na pasta dos respectivos pipelines, d
 ![Implementação databricks](databricks/evidencias/img/44b87736-0152-4ab5-8b69-9b7cb9403aff.png)
 
 #### Snowflake
-![Implementação snowflake](snowflake/evidencias/img/)
+![Implementação snowflake](snowflake/evidencias/Screenshot_1.png)
 
 ---
 
@@ -38,19 +38,20 @@ As evidencias completas estão disponiveis na pasta dos respectivos pipelines, d
 
 OBS: A lógica de negócio da camada Gold é idêntica nos dois projetos dbt (`databricks/dbt_openfootball/` e `snowflake/dbt_openfootball/`). A diferença entre as duas implementações está apenas na sintaxe do motor de banco, não no resultado final.
 
-**Volume real processado (Databricks, evidência em `databricks/evidencias/`):**
+**Volume real processado (evidência em `databricks/evidencias/` e `snowflake/evidencias/`):**
 
-| Tabela | Linhas |
-|---|---|
-| `bronze.matches` (partidas) | 1.067 |
-| `bronze.goals_raw` (gols brutos) | 1.195 |
-| `silver.goal_events` (gols limpos) | 1.195 |
-| `silver.goal_events_quarantine` (rejeitados) | 0 |
-| `gold.fact_reaction_events` | 1.195 |
+| Tabela | Databricks | Snowflake |
+|---|---|---|
+| Partidas (Bronze) | 1.067 | 1.079 |
+| Gols brutos (Bronze) | 1.195 | 1.183 |
+| Eventos de gol limpos (Silver) | 1.195 | 1.135 |
+| Eventos rejeitados em quarentena | 0 | 48 |
+| Fato de reação (Gold) | 1.195 | 1.135 |
+| Edições cobertas na Gold (dimensão) | Não medido nos prints atuais | 11 |
 
-O volume total processado soma 1.067 partidas e 1.195 eventos de gol, sem nenhum registro em quarentena. Para a fonte `worldcup.json`, as regras de qualidade de dados não rejeitaram nenhum evento de gol.
+O volume das duas plataformas fica na mesma ordem de grandeza, mas não é idêntico. O Snowflake ingeriu 12 partidas e rejeitou 48 eventos de gol a mais que o Databricks, usando a mesma regra de quarentena (minuto nulo, negativo ou maior que 130). A causa é a data de execução de cada pipeline: o Databricks rodou em 21/07/2026 e o Snowflake em 22 e 23/07/2026, período em que a Copa do Mundo de 2026 está em andamento e o repositório fonte no GitHub recebe atualizações diárias. É provável que partidas novas de 2026, ainda sem o minuto de cada gol documentado na fonte, tenham entrado no snapshot baixado pelo Snowflake e não no do Databricks.
 
-**Pendente:** contagem de linhas por camada no Snowflake.
+Entretanto, o resultado analítico final não é afetado por essa diferença de volume. Os dois pipelines chegaram ao mesmo número de reações nas edições de 2014, 2018 e 2022 (exatamente 75 em cada uma), à mesma taxa de reação de 60% em 1934 e à mesma taxa de aproximadamente 44% nas edições modernas (2014 a 2022), confirmando que a regra de negócio compartilhada produz resultado equivalente nas duas plataformas.
 
 ### Evidencias
 
@@ -60,7 +61,7 @@ As evidencias completas estão disponiveis na pasta dos respectivos pipelines, d
 ![Implementação databricks](databricks/evidencias/img/7b5df094-dca6-4469-b387-635dff51e7e5.png)
 
 #### Snowflake
-![Implementação snowflake](snowflake/evidencias/img/)
+![Implementação snowflake](snowflake/evidencias/Screenshot_3.png)
 
 ---
 
@@ -70,7 +71,7 @@ As evidencias completas estão disponiveis na pasta dos respectivos pipelines, d
 |---|---|---|
 | Modelo de computação | Serverless Compute, elástico, provisionado sob demanda só durante a execução do notebook | Warehouse `WH_DI_P_PIPELINE`, tamanho `XSMALL`, auto-suspend em 60s |
 | Adequação ao volume do projeto | Overkill para o volume atual. Todas as Copas do Mundo entre 1930 e 2026 somam 1.067 partidas, não dezenas de milhares. Spark compensa esse overhead em volumes bem maiores | Mais que suficiente para o volume atual. O warehouse `XSMALL` já sobra em capacidade de processamento |
-| Tempo de execução Medallion | Bronze 1m 9s, Silver 38s e Gold 32s, totalizando 2m 22s | Pendente |
+| Tempo de execução Medallion | Bronze 1m 9s, Silver 38s e Gold 32s, totalizando 2m 22s | poucos minutos (88 consultas concluídas com sucesso, várias delas entre 10:06:18 e 10:07:04 do dia 23/07/2026) |
 | Custo de "cold start" | Não há cold start manual. O Serverless Compute já inclui o provisionamento elástico dentro do tempo medido acima, sem cluster para ligar antes da execução | O warehouse `XSMALL` sobe em segundos e é cobrado a partir do primeiro segundo de uso |
 
 ### Evidencias
@@ -81,7 +82,7 @@ As evidencias completas estão disponiveis na pasta dos respectivos pipelines, d
 ![Implementação databricks](databricks/evidencias/img/c32533c1-d495-4056-8192-20642d38827f.png)
 
 #### Snowflake
-![Implementação snowflake](snowflake/evidencias/img/)
+![Implementação snowflake](snowflake/evidencias/Screenshot_7.png)
 
 ### Projeção de escala (de minutos para horas por semana)
 
@@ -169,7 +170,7 @@ A estimativa a seguir considera o volume atual do projeto, com o tempo real medi
 | Item | Databricks (Serverless) | Snowflake (`XSMALL`) |
 |---|---|---|
 | Frequência de execução | Semanal (± diária em mês de Copa) | Semanal (± diária em mês de Copa) |
-| Tempo por execução, cenário atual | 2 minutos e 22 segundos, medido na execução de 21/07/2026 | Pendente |
+| Tempo por execução, cenário atual | 2 minutos e 22 segundos, medido na execução de 21/07/2026 | Não medido de forma agregada. O histórico de queries indica execução na casa de segundos a poucos minutos |
 | Custo por execução, cenário atual | Estimado entre US$ 0,02 e US$ 0,10, aplicando as faixas de DBU acima sobre 2m22s. O consumo real de DBU ainda não foi medido | Estimado entre US$ 0,10 e US$ 0,30, fração de 1 crédito sobre poucos minutos de uso |
 | Custo mensal, cenário atual (fora de Copa) | Estimado abaixo de US$ 1 por mês | Estimado entre US$ 1 e US$ 3 por mês |
 | Tempo por execução, cenário projetado | 3 horas por semana (hipótese de trabalho) | 3 horas por semana (hipótese de trabalho) |
@@ -188,20 +189,21 @@ A frequência de execução está detalhada em `ARCHITECTURE.md`.
 
 ## 6. Conclusão
 
-### TL;DR;
+### TL;DR
 
-> Conclusão final: SNOWFLAKE
+### **Conclusão final: SNOWFLAKE**
 
 ### Detalhamento
 
-O volume de dados do projeto é pequeno: 1.067 partidas e 1.195 eventos de gol, cobrindo todas as edições da Copa do Mundo entre 1930 e 2026, sem nenhum registro rejeitado pelas regras de qualidade. Esse volume não justifica, por si só, a escolha de nenhuma das duas plataformas em termos de capacidade de processamento.
+O volume de dados do projeto é pequeno nas duas plataformas: 1.067 partidas no Databricks e 1.079 no Snowflake, cobrindo todas as edições da Copa do Mundo entre 1930 e 2026. Esse volume não justifica, por si só, a escolha de nenhuma das duas plataformas em termos de capacidade de processamento.
 
-O pipeline Databricks processa esse volume em 2 minutos e 22 segundos, rodando em Serverless Compute, sem necessidade de gerenciar cluster. A mesma regra de negócio está implementada nas duas plataformas por meio de modelos dbt idênticos, o que garante que o resultado analítico, o percentual de reação por edição de Copa do Mundo, é equivalente entre Databricks e Snowflake.
+O pipeline Databricks processa esse volume em 2 minutos e 22 segundos, rodando em Serverless Compute, sem necessidade de gerenciar cluster. O Snowflake não tem uma métrica agregada equivalente, mas o histórico de queries indica execução igualmente rápida. A mesma regra de negócio está implementada nas duas plataformas por meio de modelos dbt idênticos, o que garante que o resultado analítico, o percentual de reação por edição de Copa do Mundo, é equivalente entre Databricks e Snowflake: as duas chegaram a exatamente 75 reações em cada uma das edições de 2014, 2018 e 2022, e às mesmas taxas de reação em 1934 e no período moderno.
+
+A única divergência relevante encontrada está na camada Silver: o Snowflake rejeitou 48 eventos de gol por regra de qualidade de dados, contra 0 no Databricks, mesmo com a mesma regra de validação de minuto. A hipótese mais provável é que os dois pipelines baixaram snapshots diferentes da fonte em datas diferentes, durante uma Copa do Mundo em andamento com o repositório sendo atualizado diariamente. Essa divergência não muda o resultado de negócio, mas deve ser levada em consideração.
 
 Para o volume atual, as duas plataformas são tecnicamente adequadas e de baixo custo. A diferença mais relevante entre elas não está em performance ou em custo bruto, mas na operação. O Snowflake exige apenas conhecimento de SQL e não tem infraestrutura para gerenciar, o que reduz a barreira de entrada para quem não conhece Spark. O Databricks, rodando em Serverless, também elimina boa parte da complexidade operacional de cluster que tradicionalmente pesaria contra ele.
 
-Na projeção de crescimento para algumas horas de processamento por semana, o Databricks Serverless tende a apresentar custo menor que o Snowflake no mesmo cenário, considerando os preços de mercado levantados na seção 5. Essa vantagem de custo depende da disciplina operacional de manter o pipeline como execução automatizada, e não como notebook interativo, que é cobrado a um DBU mais alto.
+Na projeção de crescimento para algumas horas de processamento por semana, o Databricks Serverless tende a apresentar custo menor que o Snowflake no mesmo cenário, considerando os preços de mercado levantados na seção 5. Essa vantagem de custo depende da disciplina operacional de manter o pipeline como execução automatizada, e não como um jupyter notebook, que é cobrado a um DBU mais alto.
 
 Diante do exposto, a recomendação do grupo para este caso é o **Snowflake**, pela simplicidade operacional de depender apenas de SQL, pela ausência de infraestrutura para gerenciar e pela previsibilidade do modelo de cobrança por warehouse. O Databricks permanece como alternativa competitiva em custo projetado de crescimento, e se torna preferível caso precisemos futuramente de processamento distribuído em maior escala ou de cargas de machine learning no mesmo ambiente.
 
-**Itens pendentes para fechar a análise com números medidos dos dois lados**: tempo de execução real do Snowflake, volume processado por camada no Snowflake, e consumo real de DBU e de crédito nas duas plataformas.

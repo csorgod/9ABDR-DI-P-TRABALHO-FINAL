@@ -1,4 +1,4 @@
-# Diagrama de Arquitetura — Pipeline Open Football Database
+﻿# Diagrama de Arquitetura — Pipeline Open Football Database
 
 ```
 ╔══════════════════════════════════════════════════════════════════════════════════════╗
@@ -22,7 +22,7 @@
   ┌─────────────────────────────────┐     ┌─────────────────────────────────┐
   │         DATABRICKS              │     │          SNOWFLAKE              │
   │                                 │     │                                 │
-  │  Ingestão:  PySpark notebook    │     │  Ingestão:  Snowpark (Python)   │
+  │  Ingestão:  PySpark notebook    │     │  Ingestão:  Python + COPY INTO  │
   │  Storage:   Delta Lake          │     │  Storage:   Internal Stage      │
   │  Catálogo:  Unity Catalog       │     │  Catálogo:  Snowflake DB/Schema │
   │  Orquest.:  Databricks Workflow │     │  Orquest.:  Snowflake Tasks     │
@@ -40,7 +40,7 @@
   ┌─────────────────────────────────┐     ┌─────────────────────────────────┐
   │         DATABRICKS              │     │          SNOWFLAKE              │
   │                                 │     │                                 │
-  │  Transform.: PySpark + SQL      │     │  Transform.: Snowpark / SQL     │
+  │  Transform.: PySpark + SQL      │     │  Transform.: SQL (Stored Proc)  │
   │  Formato:    Delta (ACID +      │     │  Formato:    Snowflake native   │
   │              time travel)       │     │              (ACID nativo)      │
   │  Schema evo: Unity Catalog      │     │  Schema evo: Schema Evolution   │
@@ -53,14 +53,16 @@
                   └──────────────┬────────────────────────────┘
                                  ▼
               ┌──────────────────────────────────────────┐
-              │  ✓  QUALITY CHECKS — Silver              │
+              │  ✓  QUARENTENA — aplicada no Silver       │
               │                                          │
-              │  • Not-null: id, data, times, placar     │
-              │  • Score não-negativo (≥ 0)              │
-              │  • Validação de minutos de gols (0 a 130)│
+              │  Databricks (notebook Silver):           │
+              │  • QC-B1: campos obrigatórios (Bronze)   │
+              │  • QC-B2: placar não-negativo  (Bronze)  │
+              │  • minuto de gol inválido → quarentena   │
               │                                          │
-              │  Falha → registro movido para tabelas    │
-              │           de quarentena específicas      │
+              │  Snowflake (SP_SILVER_TRANSFORM):        │
+              │  • Mesmas regras em SQL puro             │
+              │  • Falha → SILVER.*_QUARANTINE           │
               └──────────────────┬───────────────────────┘
                                  │
                                  ▼
@@ -71,8 +73,8 @@
   ┌─────────────────────────────────┐     ┌─────────────────────────────────┐
   │         DATABRICKS              │     │          SNOWFLAKE              │
   │                                 │     │                                 │
-  │  Modelo:   SQL + PySpark        │     │  Modelo:   SQL / Dynamic Tables │
-  │  Update:   MERGE INTO           │     │  Update:   MERGE / Stream-based │
+  │  Modelo:   SQL + PySpark        │     │  Modelo:   SQL puro             │
+  │  Update:   MERGE INTO           │     │  Update:   CREATE OR REPLACE   │
   │  Exposição:Databricks SQL Wh.   │     │  Exposição:Snowflake Warehouse  │
   │                                 │     │            Streamlit in SF      │
   │                                 │     │                                 │
@@ -80,6 +82,16 @@
   │  gold.dim_competition_summary   │     │  GOLD.DIM_COMPETITION_SUMMARY   │
   └───────────────┬─────────────────┘     └───────────────────┬─────────────┘
                   └──────────────┬────────────────────────────┘
+                                 │
+                                 ▼
+              ┌──────────────────────────────────────────┐
+              │  ✓  QUALITY CHECKS — pós-Gold (Snowflake)│
+              │                                          │
+              │  SP_QUALITY_CHECKS → QC.CHECK_RESULTS    │
+              │  • QC01–02: Bronze (campos / placar)     │
+              │  • QC03–04: Silver (FK / minuto de gol)  │
+              │  • QC05:    Gold  (reacted_flag íntegro) │
+              └──────────────────┬───────────────────────┘
                                  │
                                  ▼
               ┌──────────────────────────────────────────┐
@@ -92,21 +104,20 @@
               │  Dashboard  /  Query analítica           │
               └──────────────────────────────────────────┘
 
-══════════════════════════════════════════════════════════════════════════════════
   FREQUÊNCIA DE EXECUÇÃO
 ══════════════════════════════════════════════════════════════════════════════════
 
   Período          Frequência     Cron                  Escopo
   ─────────────────────────────────────────────────────────────────────────
-  Temporada        Semanal        0 6 * * 1 (UTC)       Bronze→Silver→Gold
+  Temporada        Semanal        0 6 * * 1 (America/SP) Bronze→Silver→Gold
   (ago – mai)      (toda seg)
 
-  Recesso          Mensal         0 6 1 * * (UTC)       Verificação + Bronze
+  Recesso          Mensal         0 6 1 * * (America/SP) Verificação + Bronze
   (jun – jul)      (dia 1/mês)
 
   Correções        Sob demanda    manual                 Reprocessamento parcial
   ─────────────────────────────────────────────────────────────────────────
   Databricks:  Databricks Workflow  →  Job com cron schedule
-  Snowflake:   Task raiz com        →  USING CRON 0 6 * * 1 UTC
-               Task filhas encadeadas por AFTER (Silver depois Bronze, Gold depois Silver)
+  Snowflake:   Task unica           →  USING CRON 0 6 * * 1 America/Sao_Paulo
+               (TASK_WORLDCUP_WEEKLY chama SP_RUN_PIPELINE)
 ```
